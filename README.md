@@ -1,0 +1,3 @@
+export AWS_BEARER_TOKEN_BEDROCK=
+export OPENAI_API_KEY=
+export GOOGLE_APPLICATION_CREDENTIALS="path/to/your/key.json"
