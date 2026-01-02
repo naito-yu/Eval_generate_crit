@@ -1,0 +1,7 @@
+pandas
+scipy
+tqdm
+tenacity
+google-generativeai
+openai
+boto3

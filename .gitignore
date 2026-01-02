@@ -1,0 +1,27 @@
+cat > .gitignore << 'EOF'
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Envs
+.env
+.venv/
+venv/
+
+# uv
+uv.lock
+
+# Local env setup (do not commit)
+set.sh
+
+# Secrets
+*.json
+*.pem
+*.key
+.aws/
+
+# Logs
+*.log
+EOF

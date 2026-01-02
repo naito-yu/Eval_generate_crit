@@ -1,0 +1,192 @@
+import os
+from openai import OpenAI
+import pandas as pd
+from tenacity import retry, stop_after_attempt, wait_random_exponential
+from tqdm import tqdm
+from pathlib import Path
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+
+
+# --- OpenAI クライアント設定 ---
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+# ============================================================
+# API リトライ付き呼び出し
+# ============================================================
+@retry(wait=wait_random_exponential(min=1, max=30), stop=stop_after_attempt(10))
+def completion_with_backoff(**kwargs):
+    return client.chat.completions.create(**kwargs, seed=42)
+
+
+# ============================================================
+# 評価基準生成関数
+# ============================================================
+def generate_criterion(question, gold_answer):
+    system_prompt = """
+# 目的
+・”質問”が与えられます。
+
+・"質問"に対して予想される"回答"を1〜5点で評価するための、具体的な"評価基準"を作成してください。
+
+# 作成上のルール
+・"質問"への回答に必須でない要素を評価基準で要求しないでください。
+
+・"質問"を参考に、回答に必要な要素を箇条書きで列挙し、それぞれに加点点数を設定してください。
+
+・加点点数は整数で統一し、加点の合計は4点になるように調整してください。
+1点はベース点として与えられます。
+
+・”評価基準”は多い方が望ましいですが、不必要な基準を無理に増やすことはしないでください。可能な限り、一つの基準に複数の要素を詰め込まないでください。
+
+・"評価基準"は可能な限り具体的な内容で記述してください。
+（例：『・プロットに沿ったストーリーが展開されている: +3点』や『・記事に含まれる日付が全て抽出されている: +2点』はNG、
+『・クマが海辺に行っている: +1点 ・クマがアザラシと友達になっている: +1点 ・クマが最終的に家に帰っている: +1点』や『・「24日」が抽出されている: +1点 ・「26日」が抽出されている: +1点』はOK）
+“評価基準”と回答だけを見て採点したとしても、採点できるくらいの具体性が望ましいです。
+
+・”質問”の内容を”評価基準”でも使用する場合、表現をできるだけ統一してください。
+
+・以下の例を参考に、"評価基準"の形式を統一してください。
++を必ず入れるようにしてください。コロンや数字は半角か全角のどちらでも構いませんが、全体を通して統一するようにしてください。
+
+
+# 良い例
+"質問"
+仕事の熱意を取り戻すためのアイデアを5つ挙げてください。
+
+"評価基準"
+・アイデアを5つ挙げられている: +2点
+・全てのアイデアが、仕事の熱意と関係している: +1点
+・重複した内容のアイデアがない: +1点
+ 
+ 
+
+ "質問"
+クマが海辺に行ってアザラシと友達になり、最終的には家に帰るというプロットの短編小説を書いてください。
+
+"評価基準"
+・クマが海辺に行っている: +1点
+・クマがアザラシと友達になっている: +1点
+・クマが最終的に家に帰っている: +1点
+・短編小説になっている: +1点
+
+
+
+"質問"
+ある男性が、高校時代に好きだった女性に再会した。彼女は結婚して子供もいて幸せそうだった。男性は彼女に告白しようと思っていたが、その機会を逃してしまった。彼は後悔しながら、OOとつぶやいた。
+OOにはあることわざが入ります。何でしょう？
+
+"評価基準"
+・ことわざを回答している: +1点
+・文脈に合ったことわざを回答している: +3点
+
+
+
+#  悪い例 
+"質問"
+仕事の熱意を取り戻すためのアイデアを5つ挙げてください。
+
+
+"評価基準"
+・新しい技能や知識を学ぶことについて述べている: +1点
+・仕事に対する新しいアイデアや視点を得ることについて述べている: +1点
+・ストレスマネジメントのテクニックを学ぶことについて述べている: +1点
+・自己評価をすることについて述べている: +1点
+(評価基準の内容が正解例の内容に寄っていて、質問への回答に必須でない要素を要求をしてしまっている)
+
+
+
+“質問”
+「スタート地点から西に向かって歩き、交差点で南に曲がりしばらく歩くとゴール地点に着いた」という場面を想像して、以下の問いに答えてください。
+
+1. 交差点で左右どちらに曲がりましたか？
+2. スタート地点はゴール地点から見てどの方角にありますか？ 東西南北八方位で答えてください。
+
+
+“評価基準”
+・1と2の両方の質問に回答できている: +2点 (複数の要素を1つの基準に詰め込まない、1と2で基準を分ける)
+・1と2の両方の質問に適切に回答できている: +1点 (「適切」を使用しない)
+・免責事項の断り書きがある: +1点 (回答に必須な要素でない)
+"""
+
+    user_prompt = f"""
+評価基準を生成してください。
+
+# 質問文
+{question}
+"""
+
+    response = completion_with_backoff(
+        model="gpt-5",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=10000
+    )
+
+    return response.choices[0].message.content.strip()
+
+
+# ============================================================
+# DataFrame の評価基準カラムのみを更新
+# ============================================================
+def update_criterion_column(df,
+                            q_col="質問",
+                            a_col="正解例",
+                            criterion_col="評価基準",
+                            skip_existing=False):
+
+    criteria = []
+    for _, row in tqdm(df.iterrows(), total=len(df)):
+        # スキップモード & 既にある場合
+        if skip_existing and isinstance(row[criterion_col], str) and row[criterion_col].strip():
+            criteria.append(row[criterion_col])
+            continue
+
+        criterion = generate_criterion(row[q_col], row[a_col])
+        criteria.append(criterion)
+
+    df[criterion_col] = criteria
+    return df
+
+
+# ============================================================
+# CSV 入出力（評価基準のみ更新）
+# ============================================================
+def process_csv(input_path, output_path,
+                q_col="質問", a_col="正解例", criterion_col="評価基準",
+                skip_existing=False):
+    df = pd.read_csv(input_path)
+
+    # カラムチェック
+    for col in [q_col, a_col, criterion_col]:
+        if col not in df.columns:
+            raise ValueError(f"入力 CSV に必要なカラム '{col}' がありません")
+
+    df = update_criterion_column(df, q_col, a_col, criterion_col, skip_existing)
+    df.to_csv(output_path, index=False)
+
+    print(f"出力完了: {output_path}")
+    return df
+
+
+# ============================================================
+#  CSV パスの指定（最後にまとめた部分）
+# ============================================================
+if __name__ == "__main__":
+
+    # --- 必要なパスをここで編集 ---
+    input_csv_path = PROJECT_DIR / "data2025/data_20.csv"     
+    output_csv_path = PROJECT_DIR / "scripts_generate_crit/crit/crit_noref20.csv"  
+
+    # 既存の評価基準がある行をスキップしたい場合は True
+    skip_existing = False
+
+    process_csv(
+        input_path=input_csv_path,
+        output_path=output_csv_path,
+        q_col="質問",
+        a_col="正解例",
+        criterion_col="評価基準",
+        skip_existing=skip_existing
+    )

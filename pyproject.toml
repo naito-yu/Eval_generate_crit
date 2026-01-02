@@ -1,0 +1,15 @@
+[project]
+name = "eval-generate-crit"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "boto3>=1.42.19",
+    "google-generativeai>=0.8.6",
+    "openai>=2.14.0",
+    "pandas>=2.3.3",
+    "scipy>=1.16.3",
+    "tenacity>=9.1.2",
+    "tqdm>=4.67.1",
+]
