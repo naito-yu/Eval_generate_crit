@@ -10,9 +10,11 @@ export OPENAI_API_KEY="your_openai_api_key"
 
 # Google Gemini
 export GOOGLE_APPLICATION_CREDENTIALS="path/to/your/service_account_key.json"
+'''
 
 ## Code
 
+```bash
 ### Eval
 
 - **base**  
@@ -27,3 +29,5 @@ export GOOGLE_APPLICATION_CREDENTIALS="path/to/your/service_account_key.json"
 
 - **split**  
   評価基準を split して個別に使用するコード
+'''
+
