@@ -2,13 +2,15 @@
 
 ## Setup
 
+・環境作成
 ```bash id="2h1p4y"
 python -m venv .venv
 ```
+※ 必要なパッケージをインストールしてください
 
-ベースモデルを事前にダウンロードして models/modernbert-base に配置
+・ベースモデルを事前にダウンロードして models/modernbert-base に配置
 
-ログ出力先ディレクトリを作成（任意のパス）
+・ログ出力先ディレクトリを作成（任意のパス）
 
 ```bash id="gk1l2n"
 mkdir -p <log_dir>
